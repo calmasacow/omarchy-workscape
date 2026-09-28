@@ -94,12 +94,14 @@ def find_live(saved: dict[str, Any], live_list: list[dict[str, Any]], enabled_on
 def profile_match(cfg: dict[str, Any], profile: dict[str, Any], live_list: list[dict[str, Any]], live_net: dict[str, Any] | None = None) -> dict[str, Any]:
     live = [m for m in live_list if live_is_connected(m)]
     required = list(profile.get("monitors") or [])
+    disabled = {str(mid) for mid in (profile.get("disabledMonitors") or [])}
     missing: list[str] = []
     extra: list[str] = []
     for mid in required:
         saved = monitor_by_id(cfg, mid)
         if not saved or not find_live(saved, live):
-            missing.append(mid)
+            if str(mid) not in disabled:
+                missing.append(mid)
     for live_m in live:
         claimed = False
         for mid in required:
@@ -168,11 +170,14 @@ def _match_rank(profile: dict[str, Any], info: dict[str, Any]) -> tuple:
 
 def best_profile(cfg: dict[str, Any], live_list: list[dict[str, Any]], live_net: dict[str, Any] | None = None) -> dict[str, Any] | None:
     live_net = live_net if isinstance(live_net, dict) else {}
+    selected_id = (cfg.get("settings") or {}).get("activeProfileId")
     scored: list[tuple[tuple, dict[str, Any]]] = []
     for profile in cfg.get("profiles") or []:
         info = profile_match(cfg, profile, live_list, live_net)
         if not info["matches"]:
             continue
+        if profile.get("id") == selected_id:
+            return profile
         scored.append((_match_rank(profile, info), profile))
     if not scored:
         return None
@@ -201,7 +206,10 @@ def matching_profiles(cfg: dict[str, Any], live_list: list[dict[str, Any]], live
 def workspace_bindings(cfg: dict[str, Any], profile: dict[str, Any], live_list: list[dict[str, Any]]) -> dict[str, str]:
     out: dict[str, str] = {}
     mapping = profile.get("workspaceMonitors") or {}
+    disabled = {str(mid) for mid in (profile.get("disabledMonitors") or [])}
     for ws, mid in mapping.items():
+        if str(mid) in disabled:
+            continue
         saved = monitor_by_id(cfg, str(mid))
         if not saved:
             continue
@@ -224,16 +232,16 @@ def enable_monitor(m: dict[str, Any]) -> None:
     refresh = float(m.get("refreshRate") or 60)
     scale = SAFE.clamp_scale(m.get("scale") or 1)
     if w <= 0 or h <= 0:
-        _keyword_monitor(f"{name},preferred,auto,1")
+        _hypr_eval(f'hl.monitor({{ output = "{SAFE.lua_str(name)}", disabled = false, mode = "preferred", position = "auto", scale = 1 }})')
         return
     hz = f"{refresh:.2f}".rstrip("0").rstrip(".")
-    _keyword_monitor(f"{name},{w}x{h}@{hz},auto,{scale}")
+    _hypr_eval(f'hl.monitor({{ output = "{SAFE.lua_str(name)}", disabled = false, mode = "{w}x{h}@{hz}", position = "auto", scale = {scale} }})')
 
 
 def disable_monitor(m: dict[str, Any]) -> None:
     name = safe_connector(str(m.get("name") or ""))
     if name:
-        _keyword_monitor(f"{name},disable")
+        _hypr_eval(f'hl.monitor({{ output = "{SAFE.lua_str(name)}", disabled = true }})')
 
 
 def _hypr_eval(lua: str, timeout: float = 3) -> None:

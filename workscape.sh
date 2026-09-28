@@ -993,6 +993,9 @@ cmd_apply() {
   ensure_isolated
   ensure_config || exit 1
   wait_for_hyprland || exit 1
+  if [[ $mode == "switch" && -z $requested_id ]]; then
+    requested_id=$(jq_config -r '.settings.activeProfileId // empty')
+  fi
   install_hypr_lua || true
   python3 "$GESTURES" --config "$CONFIG_FILE" --profile-id "${requested_id:-}" --apply >/dev/null || true
   python3 "$HOTKEYS" --config "$CONFIG_FILE" --plugin-dir "$PLUGIN_DIR" --apply >/dev/null || true
@@ -1093,7 +1096,9 @@ cmd_apply() {
   if [[ $mode == "hotkey" ]]; then
     launch_force=true
   fi
-  launch_profile_assignments "$profile_id" "$launch_force"
+  if [[ $mode != "switch" ]]; then
+    launch_profile_assignments "$profile_id" "$launch_force"
+  fi
   state_put last_applied_profile "$profile_id"
   notify "WorkScape" "Applied $profile_name"
 }
@@ -1277,6 +1282,7 @@ case "${1:-}" in
   --force-launch-all) cmd_launch_all "true" ;;
   --apply-matching) cmd_apply hotkey "" true ;;
   --apply-profile) cmd_apply hotkey "${2:-}" true ;;
+  --switch-profile) cmd_apply switch "${2:-}" false ;;
   --fresh-apply-profile) cmd_fresh_apply "${2:-}" ;;
   --apply-workspace-here) cmd_apply_workspace_here "${2:-}" ;;
   --apply-hotkeys) cmd_apply_hotkeys ;;
@@ -1302,6 +1308,7 @@ workscape.sh — helper for io.github.calebhat.workscape
   --force-launch-all           launch matching profile regardless of boot flag
   --apply-matching             detect layout, bind workspaces, launch apps
   --apply-profile <id>         bind + launch a specific profile (refused if displays/network don't match)
+  --switch-profile [id]        apply the selected display/workspace layout without launching apps
   --fresh-apply-profile [id]   close that profile's app workspaces, then apply empty (refused if it doesn't match now)
   --apply-workspace-here <n>   launch matching profile WS n onto the focused workspace (skips if occupied)
   --apply-hotkeys              write user hotkeys to hypr/workscape-hotkeys.lua and bind them

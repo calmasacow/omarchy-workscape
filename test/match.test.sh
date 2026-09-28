@@ -428,4 +428,20 @@ os.environ.pop("WORKSCAPE_OCCUPIED_WS", None)
 print("occupied prefs still restamp layout ok")
 PY
 
+PYTHONDONTWRITEBYTECODE=1 python3 - "$MATCH" "$TMP" <<'PY'
+import copy, json, pathlib, runpy, sys
+m = runpy.run_path(sys.argv[1])
+fixtures = pathlib.Path(sys.argv[2])
+cfg = json.loads((fixtures / "config.json").read_text())
+alternate = copy.deepcopy(cfg["profiles"][0])
+alternate.update(id="streaming", claimedAt=1000000)
+cfg["profiles"].append(alternate)
+cfg["settings"] = {"activeProfileId": "desk-dock"}
+desk = json.loads((fixtures / "live-desk.json").read_text())
+laptop = json.loads((fixtures / "live-laptop.json").read_text())
+assert m["best_profile"](cfg, desk)["id"] == "desk-dock"
+assert m["best_profile"](cfg, laptop)["id"] == "laptop"
+print("manual selection persists; absent-display fallback ok")
+PY
+
 echo "match.test.sh ok"

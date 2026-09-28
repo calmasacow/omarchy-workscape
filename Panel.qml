@@ -60,7 +60,7 @@ Panel {
     property var liveStatus: ({ live: [], profiles: [], matchedProfileId: "", bindings: {} })
     property var liveMonitors: []
     property bool applyBusy: false
-    property string lastFollowedMatchId: ""
+    property string pendingSwitchProfileId: ""
     onFormTypeChanged: { updateFormPreview(); updateAutofillName() }
 
     property string hyprLayout: "dwindle"
@@ -199,14 +199,6 @@ Panel {
         if (root.transferOpen) { root.closeTransfer(); return }
         root.close()
     }
-    function followLiveMatch() {
-        var id = Model.nextFollowedMatch((liveStatus && liveStatus.matchedProfileId) || "", lastFollowedMatchId)
-        if (!id) return
-        lastFollowedMatchId = id
-        if (id === activeProfileId) return
-        if (!Model.profileById(config, id)) return
-        setActiveProfile(id)
-    }
     function toggle() { root.opened ? root.close() : root.open() }
     function closeForPopoutSwitch() { root.close() }
     function switchPanel(dir) {
@@ -250,7 +242,7 @@ Panel {
         saveProc.stdinEnabled = true
         saveProc.running = true
     }
-    function setActiveProfile(id) {
+    function setActiveProfile(id, switchLayout) {
         var cfg = root.currentConfig()
         if (!Model.profileById(cfg, id)) return
         cfg.settings.activeProfileId = id
@@ -260,7 +252,14 @@ Panel {
         var list = cfg.profiles || []
         for (var i = 0; i < list.length; i++) if (list[i].id !== id) opts.push(list[i].id)
         if (opts.length && (root.copyTargetId === id || !root.copyTargetId)) root.copyTargetId = opts[0]
+        if (switchLayout !== false) root.pendingSwitchProfileId = id
         saveConfig()
+    }
+    function applyPendingProfileSwitch() {
+        if (!pendingSwitchProfileId || applyBusy || applyProc.running || saveProc.running) return
+        var id = pendingSwitchProfileId
+        pendingSwitchProfileId = ""
+        if (id === activeProfileId) applyProfile(id)
     }
     function openTransfer(mode) {
         transferMode = mode === "move" ? "move" : "copy"
@@ -662,12 +661,7 @@ Panel {
         if (!formNameEdited) { fillingName = true; formName = n; fillingName = false }
     }
     function applyMatching() {
-        if (root.applyBusy || applyProc.running) return
-        root.applyBusy = true
-        applyProc.command = root.helperRun(["bash", root.script, "--apply-matching"], 180, 65536)
-        applyProc.running = true
-        statusText = "Applying matching profile…"
-        clearStatusTimer.restart()
+        applyProfile(activeProfileId)
     }
     readonly property var currentGestures: {
         if ((config.settings && config.settings.gestureSource) === "profile")
@@ -758,19 +752,18 @@ Panel {
     }
     function applyProfile(id) {
         if (root.applyBusy || applyProc.running) return
+        if (id !== activeProfileId) { setActiveProfile(id); return }
         if (!root.profileCanApply(id)) return
         root.applyBusy = true
-        applyProc.command = root.helperRun(["bash", root.script, "--apply-profile", id], 180, 65536)
+        applyProc.command = root.helperRun(["bash", root.script, "--switch-profile", id], 180, 65536)
         applyProc.running = true
         statusText = "Applying profile…"
         clearStatusTimer.restart()
     }
     function applyFreshProfile(id) {
         if (root.applyBusy || applyProc.running) return
-        var matchId = String((liveStatus && liveStatus.matchedProfileId) || "")
         var target = id
-        if (matchId && Model.profileById(config, matchId)) target = matchId
-        if (target !== activeProfileId) setActiveProfile(target)
+        if (target !== activeProfileId) setActiveProfile(target, false)
         if (!root.profileCanApply(target)) return
         root.applyBusy = true
         applyProc.command = root.helperRun(["bash", root.script, "--fresh-apply-profile", target], 180, 65536)
@@ -1339,6 +1332,7 @@ Panel {
                 saveProc.running = true
             } else if (code === 0) {
                 root.countsChanged(); refreshServiceProc.running = true
+                Qt.callLater(root.applyPendingProfileSwitch)
                 if (saveProc.wantsGestures) {
                     saveProc.wantsGestures = false
                     root.applyGestures()
@@ -1360,6 +1354,7 @@ Panel {
             root.statusText = code === 0 ? "Applied" : "Apply failed"
             clearStatusTimer.restart()
             liveProc.running = true
+            Qt.callLater(root.applyPendingProfileSwitch)
         }
     }
     Process {
@@ -1415,10 +1410,13 @@ Panel {
     }
     Process {
         id: liveProc
+        property string profileAtStart: ""
+        onStarted: profileAtStart = root.activeProfileId
         command: root.helperRun(["bash", root.script, "--live-status"], 8, Model.maxConfigBytes())
         stdout: StdioCollector { id: liveOut; waitForEnd: true }
         onExited: function(code) {
             if (code !== 0) return
+            if (profileAtStart !== root.activeProfileId || root.loading || saveProc.running) return
             try {
                 var raw = liveOut.text || "{}"
                 if (raw === root.lastLiveJson) return
@@ -1428,7 +1426,6 @@ Panel {
                 root.liveStatus = j
                 root.liveMonitors = j.live || []
                 root.liveNetwork = j.network || {}
-                root.followLiveMatch()
             } catch (e) {}
         }
     }
@@ -1602,8 +1599,8 @@ Panel {
                         Row {
                             spacing: Style.space(6)
                             Button {
-                                text: root.applyBusy ? "Applying…" : "Apply matching"
-                                tooltipText: "Load the profile for the connected displays. Moves existing workspaces onto that layout’s monitors. Does not close windows — use Fresh to relaunch."
+                                text: root.applyBusy ? "Applying…" : "Apply selected"
+                                tooltipText: "Apply the selected profile’s displays and workspace assignments. Existing windows move with their workspaces."
                                 enabled: !root.applyBusy
                                 onClicked: root.applyMatching()
                             }
@@ -2513,7 +2510,7 @@ Panel {
 
                     SectionCard {
                         title: "LOGIN"
-                        hint: "Picks one profile from connected displays, then Wi-Fi name / LAN subnet if you bound a network. One layout per environment. Middle-click the bar chip or Apply matching any time."
+                        hint: "Selecting a profile switches its displays and workspace assignments. Saved display and network requirements are checked before switching."
                         foreground: root.foreground
                         fontFamily: root.fontFamily
                         WrapToggle {
@@ -2624,7 +2621,7 @@ Panel {
                             for (var i = 0; i < ids.length; i++) {
                                 for (var p = 0; p < list.length; p++) if (list[p].id === ids[i]) names.push(list[p].name)
                             }
-                            return "Also matches " + names.join(", ") + ". Bound-network profiles win; only one layout applies."
+                            return "Also supports " + names.join(", ") + ". Choose the profile you want to use."
                         }
                         color: Color.urgent || "#ff4444"
                         font.family: root.fontFamily

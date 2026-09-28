@@ -1,5 +1,7 @@
 # WorkScape
 
+This is calmasacow's customization fork of [calebhat/omarchy-workscape](https://github.com/calebhat/omarchy-workscape). See [FORK.md](FORK.md) for the changes, installation, and optional workspace-number widget. The upstream manual below describes the original behavior where it differs.
+
 **Monitor and workspace management suite for [Omarchy](https://omarchy.org) + Hyprland.**
 
 WorkScape is the control panel for how this machine should look in each place you sit: which displays are on, which workspace lives on which monitor, which apps open where, how tiling behaves, and what happens when a new window does not fit. Profiles switch from the bar (or at login) when the connected displays — and optionally Wi‑Fi / LAN — match.

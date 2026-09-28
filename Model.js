@@ -403,7 +403,7 @@ function applyHint(cfg, profile, liveList, liveNet, liveStatus) {
             ? "matches now · this applies"
             : "matches now · fallback for this layout"
     } else if (match.matches && willId && willId !== viewingId) {
-        text = "displays match · " + willName + " still wins"
+        text = "displays match · ready to switch"
     } else if (match.matches && !willId) {
         text = "displays match · nothing applies"
     } else {
@@ -2421,14 +2421,20 @@ function findLive(saved, liveList) {
 function profileMatch(cfg, profile, liveList, liveNet) {
     var live = (liveList || []).filter(liveIsReal)
     var required = profile && profile.monitors ? profile.monitors : []
+    var disabled = profile && profile.disabledMonitors ? profile.disabledMonitors : []
     var missing = []
     var matched = []
     var used = {}
     for (var i = 0; i < required.length; i++) {
         var saved = monitorById(cfg, required[i])
-        if (!saved) { missing.push(required[i]); continue }
+        if (!saved) {
+            if (disabled.indexOf(required[i]) === -1) missing.push(required[i])
+            continue
+        }
         var hit = findLive(saved, live)
-        if (!hit) missing.push(required[i])
+        if (!hit) {
+            if (disabled.indexOf(required[i]) === -1) missing.push(required[i])
+        }
         else {
             matched.push(required[i])
             used[String(hit.name || hit.description)] = true
@@ -2482,10 +2488,12 @@ function nextFollowedMatch(matchedId, lastFollowed) {
 
 function bestProfile(cfg, liveList, liveNet) {
     var list = (cfg && cfg.profiles) || []
+    var selectedId = ((cfg && cfg.settings) || {}).activeProfileId
     var scored = []
     for (var i = 0; i < list.length; i++) {
         var info = profileMatch(cfg, list[i], liveList, liveNet)
         if (!info.matches) continue
+        if (list[i].id === selectedId) return list[i]
         scored.push({
             profile: list[i],
             info: info,

@@ -798,4 +798,15 @@ if (JSON.stringify(geomed[0].geom) !== JSON.stringify(geomed[1].geom))
 if (JSON.stringify(geomed[1].geom) === JSON.stringify(geomed[2].geom))
   throw new Error("the ungrouped window keeps its own tile")
 
+const manualCfg = JSON.parse(JSON.stringify(cfg))
+const alternateDock = JSON.parse(JSON.stringify(manualCfg.profiles.find(p => p.id === "desk-dock")))
+alternateDock.id = "streaming"
+alternateDock.claimedAt = 1000000
+manualCfg.profiles.push(alternateDock)
+manualCfg.settings = { activeProfileId: "desk-dock" }
+if (m.bestProfile(manualCfg, liveDesk).id !== "desk-dock")
+  throw new Error("manual selection must beat a newer matching duplicate")
+if (m.bestProfile(manualCfg, liveLaptop).id !== "laptop")
+  throw new Error("manual selection must fall back when its displays disappear")
+
 console.log("model.test.js ok")

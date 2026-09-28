@@ -130,18 +130,9 @@ Item {
             onRead: function(d) {
                 if (d.length > 4096) return
                 root.log("extras " + d)
-                if (d.indexOf('"monitorChange"') >= 0 && !syncMatchProc.running)
-                    syncMatchProc.running = true
             }
         }
         stderr: SplitParser { onRead: function(d){ if (d.length > 4096) return; console.warn("[workscape] extras] " + d) } }
-    }
-
-    Process {
-        id: syncMatchProc
-        command: root.helperRun(["bash", root.script, "--sync-active-profile"], 8, 4096)
-        stdout: SplitParser { onRead: function(d){ if (d.length > 4096) return; root.log("sync " + d) } }
-        stderr: SplitParser { onRead: function(d){ if (d.length > 4096) return; console.warn("[workscape] sync] " + d) } }
     }
 
     Timer {
